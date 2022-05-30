@@ -9,7 +9,7 @@ import (
 
 // Reference to src/syscall/exec_linux.go
 //go:norace
-func forkAndExecInChild(r *Runner, argv0 *byte, argv, env []*byte, workdir, hostname, domainname, pivotRoot *byte, p [2]int) (r1 uintptr, err1 syscall.Errno) {
+func forkAndExecInChild(r *Runner, argv0 *byte, workdir, hostname, domainname, pivotRoot *byte, p [2]int) (r1 uintptr, err1 syscall.Errno) {
 	var (
 		loc        ErrorLocation
 		idx, pipe  int
@@ -39,7 +39,7 @@ func forkAndExecInChild(r *Runner, argv0 *byte, argv, env []*byte, workdir, host
 	afterForkInChild()
 	// Notice: cannot call any GO functions beyond this point
 
-	pipe, loc, idx, err1 = forkAndExecInChild1(r, argv0, argv, env, workdir, hostname, domainname, pivotRoot, fd, nextfd, p)
+	pipe, loc, idx, err1 = forkAndExecInChild1(r, argv0, workdir, hostname, domainname, pivotRoot, fd, nextfd, p)
 
 	// send error code on pipe
 	childError.Err = err1
@@ -55,7 +55,7 @@ func forkAndExecInChild(r *Runner, argv0 *byte, argv, env []*byte, workdir, host
 }
 
 //go:nosplit
-func forkAndExecInChild1(r *Runner, argv0 *byte, argv, env []*byte, workdir, hostname, domainname, pivotRoot *byte, fd []int, nextfd int, p [2]int) (pipe int, loc ErrorLocation, idx int, err1 syscall.Errno) {
+func forkAndExecInChild1(r *Runner, argv0 *byte, workdir, hostname, domainname, pivotRoot *byte, fd []int, nextfd int, p [2]int) (pipe int, loc ErrorLocation, idx int, err1 syscall.Errno) {
 	pipe = p[1]
 	var (
 		r1, pid     uintptr
@@ -136,22 +136,10 @@ func forkAndExecInChild1(r *Runner, argv0 *byte, argv, env []*byte, workdir, hos
 		pipe = nextfd
 		nextfd++
 	}
-	if r.ExecFile > 0 && int(r.ExecFile) < nextfd {
-		// Avoid fd rewrite
-		for nextfd == pipe {
-			nextfd++
-		}
-		_, _, err1 = syscall.RawSyscall(syscall.SYS_DUP3, r.ExecFile, uintptr(nextfd), syscall.O_CLOEXEC)
-		if err1 != 0 {
-			return pipe, LocDup3, 0, err1
-		}
-		r.ExecFile = uintptr(nextfd)
-		nextfd++
-	}
 	for i := 0; i < len(fd); i++ {
 		if fd[i] >= 0 && fd[i] < int(i) {
 			// Avoid fd rewrite
-			for nextfd == pipe || (r.ExecFile > 0 && nextfd == int(r.ExecFile)) {
+			for nextfd == pipe {
 				nextfd++
 			}
 			_, _, err1 = syscall.RawSyscall(syscall.SYS_DUP3, uintptr(fd[i]), uintptr(nextfd), syscall.O_CLOEXEC)
@@ -474,14 +462,8 @@ func forkAndExecInChild1(r *Runner, argv0 *byte, argv, env []*byte, workdir, hos
 	// or execve trapped without seccomp filter
 	// time to exec
 	// if execfile fd is specified, call fexecve
-	if r.ExecFile > 0 {
-		_, _, err1 = syscall.RawSyscall6(unix.SYS_EXECVEAT, r.ExecFile,
-			uintptr(unsafe.Pointer(&empty[0])), uintptr(unsafe.Pointer(&argv[0])),
-			uintptr(unsafe.Pointer(&env[0])), unix.AT_EMPTY_PATH, 0)
-	} else {
-		_, _, err1 = syscall.RawSyscall(unix.SYS_EXECVE, uintptr(unsafe.Pointer(argv0)),
-			uintptr(unsafe.Pointer(&argv[0])), uintptr(unsafe.Pointer(&env[0])))
-	}
+	_, _, err1 = syscall.RawSyscall(unix.SYS_EXECVE, uintptr(unsafe.Pointer(argv0)),
+		0, 0)
 	// Fix potential ETXTBSY but with caution (max 50 attempt)
 	// The ETXTBSY happens when we copy the executable into container, another goroutine
 	// forks but not execve yet (time consuming for setting up mounting points), the forked
@@ -493,14 +475,8 @@ func forkAndExecInChild1(r *Runner, argv0 *byte, argv, env []*byte, workdir, hos
 		}
 		// wait instead of busy wait
 		syscall.RawSyscall(unix.SYS_NANOSLEEP, uintptr(unsafe.Pointer(&etxtbsyRetryInterval)), 0, 0)
-		if r.ExecFile > 0 {
-			_, _, err1 = syscall.RawSyscall6(unix.SYS_EXECVEAT, r.ExecFile,
-				uintptr(unsafe.Pointer(&empty[0])), uintptr(unsafe.Pointer(&argv[0])),
-				uintptr(unsafe.Pointer(&env[0])), unix.AT_EMPTY_PATH, 0)
-		} else {
-			_, _, err1 = syscall.RawSyscall(unix.SYS_EXECVE, uintptr(unsafe.Pointer(argv0)),
-				uintptr(unsafe.Pointer(&argv[0])), uintptr(unsafe.Pointer(&env[0])))
-		}
+		_, _, err1 = syscall.RawSyscall(unix.SYS_EXECVE, uintptr(unsafe.Pointer(argv0)),
+			0, 0)
 	}
 	return pipe, LocExecve, 0, err1
 }

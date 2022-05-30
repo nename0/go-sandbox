@@ -12,11 +12,6 @@ import (
 // The runtime OS thread must be locked before calling this function
 // if ptrace is set to true
 func (r *Runner) Start() (int, error) {
-	argv0, argv, env, err := prepareExec(r.Args, r.Env)
-	if err != nil {
-		return 0, err
-	}
-
 	// prepare work dir
 	workdir, err := syscallStringFromString(r.WorkDir)
 	if err != nil {
@@ -50,7 +45,7 @@ func (r *Runner) Start() (int, error) {
 	}
 
 	// fork in child
-	pid, err1 := forkAndExecInChild(r, argv0, argv, env, workdir, hostname, domainname, pivotRoot, p)
+	pid, err1 := forkAndExecInChild(r, r.ExecPath, workdir, hostname, domainname, pivotRoot, p)
 
 	// restore all signals
 	afterFork()

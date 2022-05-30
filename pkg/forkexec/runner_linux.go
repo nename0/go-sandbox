@@ -11,12 +11,7 @@ import (
 // and resource limits. It can creates tracee for ptrace-based tracer.
 // It can also create unshared process in another namespace
 type Runner struct {
-	// argv and env for execve syscall for the child process
-	Args []string
-	Env  []string
-
-	// if exec_fd is defined, then at the end, fd_execve is called
-	ExecFile uintptr
+	ExecPath *byte
 
 	// POSIX Resource limit set by set rlimit
 	RLimits []rlimit.RLimit
